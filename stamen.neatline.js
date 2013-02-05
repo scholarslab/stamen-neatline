@@ -1,7 +1,7 @@
 (function(exports) {
 
 /*
- * tile.stamen.js v1.1.1
+ * tile.stamen.js v1.2.1
  */
 
 var SUBDOMAINS = " a. b. c. d.".split(" "),
@@ -11,13 +11,31 @@ var SUBDOMAINS = " a. b. c. d.".split(" "),
             "type":         type,
             "subdomains":   SUBDOMAINS.slice(),
             "minZoom":      minZoom,
-            "maxZoom":      maxZoom
+            "maxZoom":      maxZoom,
+            "attribution":  ATTRIBUTION
         };
     },
     PROVIDERS =  {
         "toner":        MAKE_PROVIDER("toner", "png", 0, 20),
         "terrain":      MAKE_PROVIDER("terrain", "jpg", 4, 18),
-        "watercolor":   MAKE_PROVIDER("watercolor", "jpg", 3, 16)
+        "watercolor":   MAKE_PROVIDER("watercolor", "jpg", 1, 16),
+        "trees-cabs-crime": {
+            "url": "http://{S}.tiles.mapbox.com/v3/stamen.trees-cabs-crime/{Z}/{X}/{Y}.png",
+            "type": "png",
+            "subdomains": "a b c d".split(" "),
+            "minZoom": 11,
+            "maxZoom": 18,
+            "extent": [
+                {"lat": 37.853, "lon": -122.577},
+                {"lat": 37.684, "lon": -122.313}
+            ],
+            "attribution": [
+                'Design by Shawn Allen at <a href="http://stamen.com">Stamen</a>.',
+                'Data courtesy of <a href="http://fuf.net">FuF</a>,',
+                '<a href="http://www.yellowcabsf.com">Yellow Cab</a>',
+                '&amp; <a href="http://sf-police.org">SFPD</a>.'
+            ].join(" ")
+        }
     },
     ATTRIBUTION = [
         'Map tiles by <a href="http://stamen.com">Stamen Design</a>, ',
@@ -67,49 +85,6 @@ function getProvider(name) {
 }
 
 /*
- * StamenTileLayer for modestmaps-js
- * <https://github.com/modestmaps/modestmaps-js/>
- *
- * Works with both 1.x and 2.x by checking for the existence of MM.Template.
- */
-if (typeof MM === "object") {
-    var ModestTemplate = (typeof MM.Template === "function")
-        ? MM.Template
-        : MM.TemplatedMapProvider;
-    MM.StamenTileLayer = function(name) {
-        var provider = getProvider(name);
-        MM.Layer.call(this, new ModestTemplate(provider.url, SUBDOMAINS));
-        this.provider.setZoomRange(provider.minZoom, provider.maxZoom);
-        this.attribution = ATTRIBUTION;
-    };
-    MM.extend(MM.StamenTileLayer, MM.Layer);
-}
-
-/*
- * StamenTileLayer for Leaflet
- * <http://leaflet.cloudmade.com/>
- *
- * Tested with version 0.3 and 0.4, but should work on all 0.x releases.
- */
-if (typeof L === "object") {
-    L.StamenTileLayer = L.TileLayer.extend({
-        initialize: function(name) {
-            var provider = getProvider(name),
-                url = provider.url.replace(/({[A-Z]})/g, function(s) {
-                    return s.toLowerCase();
-                });
-            L.TileLayer.prototype.initialize.call(this, url, {
-                "minZoom":      provider.minZoom,
-                "maxZoom":      provider.maxZoom,
-                "subdomains":   SUBDOMAINS,
-                "scheme":       "xyz",
-                "attribution":  ATTRIBUTION
-            });
-        }
-    });
-}
-
-/*
  * StamenTileLayer for OpenLayers
  * <http://openlayers.org/>
  *
@@ -126,12 +101,13 @@ if (typeof OpenLayers === "object") {
     // based on http://www.bostongis.com/PrinterFriendly.aspx?content_name=using_custom_osm_tiles
     OpenLayers.Layer.Stamen = OpenLayers.Class(OpenLayers.Layer.OSM, {
         initialize: function(name, options) {
-            var provider = getProvider(options.provider || name),
+            var provider = getProvider(name),
                 url = provider.url,
+                subdomains = provider.subdomains,
                 hosts = [];
             if (url.indexOf("{S}") > -1) {
-                for (var i = 0; i < SUBDOMAINS.length; i++) {
-                    hosts.push(openlayerize(url.replace("{S}", SUBDOMAINS[i])));
+                for (var i = 0; i < subdomains.length; i++) {
+                    hosts.push(openlayerize(url.replace("{S}", subdomains[i])));
                 }
             } else {
                 hosts.push(openlayerize(url));
@@ -140,40 +116,15 @@ if (typeof OpenLayers === "object") {
                 "numZoomLevels":        provider.maxZoom,
                 "buffer":               0,
                 "transitionEffect":     "resize",
-                // see: <http://dev.openlayers.org/apidocs/files/OpenLayers/Tile/Image-js.html#OpenLayers.Tile.Image.crossOriginKeyword>
-                "crossOriginKeyword":   "anonymous"
+                // see: <http://dev.openlayers.org/apidocs/files/OpenLayers/Layer/OSM-js.html#OpenLayers.Layer.OSM.tileOptions>
+                // and: <http://dev.openlayers.org/apidocs/files/OpenLayers/Tile/Image-js.html#OpenLayers.Tile.Image.crossOriginKeyword>
+                "tileOptions": {
+                    "crossOriginKeyword": null
+                }
             }, options);
             return OpenLayers.Layer.OSM.prototype.initialize.call(this, name, hosts, options);
         }
     });
-}
-
-/*
- * StamenMapType for Google Maps API V3
- * <https://developers.google.com/maps/documentation/javascript/>
- */
-if (typeof google === "object" && typeof google.maps === "object") {
-    google.maps.StamenMapType = function(name) {
-        var provider = getProvider(name);
-        return google.maps.ImageMapType.call(this, {
-            "getTileUrl": function(coord, zoom) {
-                var index = (zoom + coord.x + coord.y) % SUBDOMAINS.length;
-                return [
-                    provider.url
-                        .replace("{S}", SUBDOMAINS[index])
-                        .replace("{Z}", zoom)
-                        .replace("{X}", coord.x)
-                        .replace("{Y}", coord.y)
-                ];
-            },
-            "tileSize": new google.maps.Size(256, 256),
-            "name":     name,
-            "minZoom":  provider.minZoom,
-            "maxZoom":  provider.maxZoom
-        });
-    };
-    // FIXME: is there a better way to extend classes in Google land?
-    google.maps.StamenMapType.prototype = new google.maps.ImageMapType("_");
 }
 
 })(typeof exports === "undefined" ? this : exports);
